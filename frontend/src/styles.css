@@ -1,0 +1,221 @@
+/* =======================================
+   THEME VARIABLES
+======================================= */
+:root {
+    /* LIGHT THEME COLORS (Enhanced Glassmorphism) */
+    --bg-img: url('bg.png');
+    --bg-size: 600px;
+
+    --text-main: #0a2a32;
+    --title-color: #0b6e4f;
+    --label-color: #0a3d62;
+
+    /* Glassmorphism */
+    --container-bg: rgba(255, 255, 255, 0.35);
+    --container-border: rgba(0, 255, 200, 0.22);
+    --container-glow: rgba(0, 255, 200, 0.25);
+
+    --input-bg: rgba(255, 255, 255, 0.25);
+    --input-border: rgba(0, 150, 136, 0.25);
+
+    --meal-bg: rgba(255, 255, 255, 0.3);
+    --meal-border: rgba(0, 150, 136, 0.25);
+    --meal-strong: #00695c;
+
+    --button-grad1: #4dd0e1;
+    --button-grad2: #26a69a;
+    --button-text: white;
+}
+
+/* =======================================
+   DARK THEME OVERRIDES
+======================================= */
+body[data-theme="dark"] {
+    --bg-img: url('bg-dark.png');
+    --bg-size: 600px;
+
+    --text-main: #e0f2f1;
+    --title-color: #5efc82;
+    --label-color: #9ef0e6;
+
+    --container-bg: rgba(0, 25, 25, 0.45);
+    --container-border: rgba(0, 255, 200, 0.22);
+    --container-glow: rgba(0, 255, 200, 0.1);
+
+    --input-bg: rgba(255, 255, 255, 0.08);
+    --input-border: #4db6ac;
+
+    --meal-bg: rgba(0, 70, 70, 0.25);
+    --meal-border: #26a69a;
+    --meal-strong: #6fffd2;
+
+    --button-grad1: #26a69a;
+    --button-grad2: #004d40;
+    --button-text: white;
+}
+
+/* Smooth theme transitions */
+body {
+    transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+/* =======================================
+   GLOBAL LOOK & FEEL
+======================================= */
+body {
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    margin: 0;
+    padding: 0;
+
+    background-image: var(--bg-img);
+    background-size: var(--bg-size);
+    animation: scrollBackground 40s linear infinite;
+
+    color: var(--text-main);
+}
+
+/* Background animation */
+@keyframes scrollBackground {
+    0% {
+        background-position: 0 0;
+    }
+
+    100% {
+        background-position: -1200px 1200px;
+    }
+}
+
+/* =======================================
+   MAIN CONTAINER (Glass Effect)
+======================================= */
+.container {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 28px;
+
+    background: var(--container-bg);
+    border: 1px solid var(--container-border);
+
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+
+    border-radius: 18px;
+
+    box-shadow: 0 8px 40px var(--container-glow);
+
+    animation: fadeIn 1.2s ease;
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* =======================================
+   HEADINGS & LABELS
+======================================= */
+h1 {
+    margin: 0 0 16px 0;
+    color: var(--title-color);
+    text-align: center;
+}
+
+h2 {
+    color: var(--title-color);
+}
+
+label {
+    display: block;
+    margin: 8px 0 4px;
+    font-weight: 600;
+    color: var(--label-color);
+}
+
+/* =======================================
+   INPUT FIELDS
+======================================= */
+input,
+select {
+    padding: 10px 12px;
+    width: 100%;
+    box-sizing: border-box;
+
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+
+    background: var(--input-bg);
+    color: var(--text-main);
+
+    transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+input:focus,
+select:focus {
+    border-color: #26a69a;
+    box-shadow: 0 0 6px rgba(38, 166, 154, 0.4);
+    outline: none;
+}
+
+/* =======================================
+   LAYOUT GRID
+======================================= */
+.row {
+    display: flex;
+    gap: 12px;
+}
+
+.col {
+    flex: 1;
+}
+
+/* =======================================
+   BUTTON
+======================================= */
+button {
+    background: linear-gradient(135deg, var(--button-grad1), var(--button-grad2));
+    color: var(--button-text);
+
+    border: none;
+    padding: 12px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+
+    margin-top: 16px;
+
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 121, 107, 0.3);
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+/* =======================================
+   MEAL CARD
+======================================= */
+.meal {
+    padding: 14px;
+    border-radius: 10px;
+
+    background: var(--meal-bg);
+    border: 1px solid var(--meal-border);
+
+    margin-bottom: 10px;
+    animation: fadeIn 0.8s ease;
+}
+
+.meal strong {
+    color: var(--meal-strong);
+}
