@@ -62,7 +62,7 @@ CHARM/
 - Python  
 - FastAPI / Flask  
 - ML: scikit-learn / PyTorch / TensorFlow  
- y
+
 ### Frontend
 - React / Streamlit  
 - Tailwind / Material UI  
