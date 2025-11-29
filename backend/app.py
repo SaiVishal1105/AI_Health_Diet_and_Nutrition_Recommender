@@ -1,51 +1,69 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from data_processing import load_and_process
-import torch, numpy as np
+import torch
+import numpy as np
 from model import RecipeRanker
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 # -------------------------------------------------
 # Create FastAPI app
 # -------------------------------------------------
 app = FastAPI(title="Diet Recommender API")
 
-# CORS
+# -------------------------------------------------
+# CORS for Vercel Frontend
+# -------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # <-- You can later whitelist your Vercel domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -------------------------------------------------
-# Load data & model
+# Load Data & Model
 # -------------------------------------------------
-DATA_PATH = "/mnt/data/healthy_recipes_augmented.xlsx"
-df_global, enc_global, scaler_global, num_cols = load_and_process()
+print("Loading data...")
 
-recipe_features = df_global[
-    [c for c in df_global.columns if c.startswith('std_')]
-].values.astype('float32')
+try:
+    df_global, enc_global, scaler_global, num_cols = load_and_process()
+    print("Data loaded successfully.")
+except Exception as e:
+    print("DATA LOAD ERROR:", e)
+    df_global = None
 
-# Input vector dims
+# Recipe features
+if df_global is not None:
+    recipe_features = df_global[[c for c in df_global.columns if c.startswith('std_')]].values.astype('float32')
+else:
+    recipe_features = np.zeros((1, 5), dtype="float32")
+
+# model dims
 user_dim = 3 + 3 + 4 + 3
 recipe_dim = recipe_features.shape[1]
 
 model = RecipeRanker(user_dim, recipe_dim)
 
+MODEL_PATH = "model.pt"
+
+print("Loading model...")
 try:
-    model.load_state_dict(torch.load('model.pt', map_location='cpu'))
-    model.eval()
-    print("Model loaded successfully.")
+    if os.path.exists(MODEL_PATH):
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+        model.eval()
+        print("Model loaded successfully.")
+    else:
+        print("MODEL FILE NOT FOUND:", MODEL_PATH)
 except Exception as e:
-    print("Model load warning:", e)
+    print("MODEL LOAD ERROR:", e)
 
 
 # -------------------------------------------------
-# API Models
+# Request Schema
 # -------------------------------------------------
 class UserInput(BaseModel):
     age: int
@@ -57,21 +75,24 @@ class UserInput(BaseModel):
     chronic: str
     cuisine_pref: str
     food_type: str
-    calorie_target: float = None
+    calorie_target: float | None = None
 
 
 # -------------------------------------------------
-# SCORE RECIPES
+# Score Recipes
 # -------------------------------------------------
 def score_recipes(user):
+    # BMI
     bmi = user['weight_kg'] / ((user['height_cm'] / 100) ** 2 + 1e-6)
 
+    # Basic user vector
     user_vec = [
         user['age'] / 100.0,
         bmi / 50.0,
         user['activity_level'] / 2.0
     ]
 
+    # One-hot encodings
     goals = ['loss', 'gain', 'muscle']
     defs_ = ['none', 'iron', 'vitd', 'protein']
     chs = ['none', 'diabetes', 'hypertension']
@@ -80,20 +101,22 @@ def score_recipes(user):
     user_vec += [1.0 if user['deficiency'] == d else 0.0 for d in defs_]
     user_vec += [1.0 if user['chronic'] == c else 0.0 for c in chs]
 
-    uv = torch.tensor(user_vec, dtype=torch.float32).unsqueeze(0).repeat(len(recipe_features), 1)
+    uv = torch.tensor(user_vec, dtype=torch.float32).unsqueeze(0)
+    uv = uv.repeat(len(recipe_features), 1)
     rx = torch.tensor(recipe_features, dtype=torch.float32)
 
+    # Model prediction
     with torch.no_grad():
         try:
             scores = model(uv, rx).numpy()
-        except:
-            scores = np.random.rand(len(rx))
+        except Exception:
+            scores = np.random.rand(len(recipe_features))
 
     return scores
 
 
 # -------------------------------------------------
-# WEEK PLAN GENERATOR
+# Weekly Plan Builder
 # -------------------------------------------------
 def build_week_plan(user_input):
     user = dict(user_input)
@@ -102,27 +125,26 @@ def build_week_plan(user_input):
     df = df_global.copy()
     df["score"] = scores
 
-    # Filter by veg / non-veg / vegan
-    if user['food_type'] and user['food_type'].lower() != "none":
-        df = df[df['food_type'].str.lower() == user['food_type'].lower()]
+    # Filter for veg/non-veg/vegan
+    if user["food_type"] and user["food_type"].lower() != "none":
+        df = df[df["food_type"].str.lower() == user["food_type"].lower()]
 
-    # Cuisine scoring
+    # Cuisine preference multiplier
     if user["cuisine_pref"]:
         df.loc[df["cuisine"] != user["cuisine_pref"], "score"] *= 0.8
 
     plan = {"days": []}
     used = set()
 
+    # ---------- Daily Meal Plan ----------
     for day in range(7):
         day_meals = {}
 
         for meal in ["Breakfast", "Lunch", "Dinner"]:
-            candidates = df[df["meal_type"].str.lower() == meal.lower()].sort_values(
-                "score", ascending=False
-            )
+            candidates = df[df["meal_type"].str.lower() == meal.lower()].sort_values("score", ascending=False)
 
             chosen = None
-            for idx, row in candidates.iterrows():
+            for _, row in candidates.iterrows():
                 if row["recipe_name"] not in used:
                     chosen = row
                     break
@@ -131,16 +153,16 @@ def build_week_plan(user_input):
                 chosen = candidates.iloc[0]
 
             day_meals[meal] = {
-                'recipe_name': chosen.get('recipe_name', ''),
-                'ingredients': chosen.get('ingredients', ''),
-                'instructions': chosen.get('instructions', ''),
-                'preparation': chosen.get('preparation', ''),
-                'calories': float(chosen.get('calories', 0)),
-                'protein_g': float(chosen.get('protein_g', 0)),
-                'carbs_g': float(chosen.get('carbs_g', 0)),
-                'fat_g': float(chosen.get('fat_g', 0)),
-                'iron_mg': float(chosen.get('iron_mg', 0)),
-                'suitable_for_diabetes': bool(chosen.get('suitable_for_diabetes', False)),
+                "recipe_name": chosen.get("recipe_name", ""),
+                "ingredients": chosen.get("ingredients", ""),
+                "instructions": chosen.get("instructions", ""),
+                "preparation": chosen.get("preparation", ""),
+                "calories": float(chosen.get("calories", 0)),
+                "protein_g": float(chosen.get("protein_g", 0)),
+                "carbs_g": float(chosen.get("carbs_g", 0)),
+                "fat_g": float(chosen.get("fat_g", 0)),
+                "iron_mg": float(chosen.get("iron_mg", 0)),
+                "suitable_for_diabetes": bool(chosen.get("suitable_for_diabetes", False)),
             }
 
             used.add(chosen["recipe_name"])
@@ -149,9 +171,7 @@ def build_week_plan(user_input):
 
         plan["days"].append(day_meals)
 
-    # -------------------------------------------------
-    # UNIQUE WORKOUT PLAN PER DAY
-    # -------------------------------------------------
+    # ---------- Workout Plan ----------
     workouts_loss = [
         "HIIT + Core (30–40 min)",
         "Brisk Walk/Cycling (45 min)",
@@ -159,7 +179,7 @@ def build_week_plan(user_input):
         "Yoga + Mobility (30 min)",
         "Interval Running + Core (30 min)",
         "Bodyweight Strength (40 min)",
-        "Light Walk + Stretch (20 min)"
+        "Light Walk + Stretch (20 min)",
     ]
 
     workouts_muscle = [
@@ -169,7 +189,7 @@ def build_week_plan(user_input):
         "Core + Mobility (30 min)",
         "Upper Body Strength (50 min)",
         "Lower Body Strength (50 min)",
-        "Active Rest + Stretching (20 min)"
+        "Active Rest + Stretching (20 min)",
     ]
 
     workouts_gain = [
@@ -179,7 +199,7 @@ def build_week_plan(user_input):
         "Core + Yoga (30 min)",
         "Upper Body Hypertrophy (50 min)",
         "Lower Body Hypertrophy (50 min)",
-        "Rest Day + Stretch (20 min)"
+        "Rest Day + Stretch (20 min)",
     ]
 
     if user["goal"] == "muscle":
@@ -193,7 +213,7 @@ def build_week_plan(user_input):
 
 
 # -------------------------------------------------
-# API ROUTE
+# API Route
 # -------------------------------------------------
 @app.post("/generate_plan")
 def generate_plan(inp: UserInput):
@@ -201,7 +221,7 @@ def generate_plan(inp: UserInput):
 
 
 # -------------------------------------------------
-# MAIN
+# Main (for local testing)
 # -------------------------------------------------
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
