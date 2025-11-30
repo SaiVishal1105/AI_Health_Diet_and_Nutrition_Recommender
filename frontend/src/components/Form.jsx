@@ -2,10 +2,10 @@ import React, { useState } from "react";
 
 export default function Form({ onResult }) {
   const [state, setState] = useState({
-    age: 23,
-    height_cm: 170,
-    weight_kg: 70,
-    activity_level: 1.55,
+    age: "23",
+    height_cm: "170",
+    weight_kg: "70",
+    activity_level: "1.55",
     goal: "loss",
     deficiency: "none",
     chronic: "none",
@@ -16,25 +16,40 @@ export default function Form({ onResult }) {
   const submit = async (e) => {
     e.preventDefault();
 
+    const payload = {
+      age: Number(state.age),
+      height_cm: Number(state.height_cm),
+      weight_kg: Number(state.weight_kg),
+      activity_level: Number(state.activity_level),
+      goal: state.goal,
+      deficiency: state.deficiency,
+      chronic: state.chronic,
+      cuisine_pref: state.cuisine_pref || "none",
+      food_type: state.food_type
+    };
+
     try {
       const resp = await fetch(
         "https://charm-care-health-ai-based-regimen.onrender.com/generate_plan",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(state),
+          body: JSON.stringify(payload),
         }
       );
 
       if (!resp.ok) {
+        const errData = await resp.text();
+        console.error("Server Validation Error:", errData);
         throw new Error("Backend error");
       }
 
       const data = await resp.json();
       onResult(data);
+
     } catch (err) {
       console.error("Failed:", err);
-      alert("⚠️ Failed to fetch plan. Backend unreachable.");
+      alert("⚠️ Failed to fetch plan. Check backend logs.");
     }
   };
 
@@ -46,9 +61,7 @@ export default function Form({ onResult }) {
           <input
             type="number"
             value={state.age}
-            onChange={(e) =>
-              setState({ ...state, age: parseInt(e.target.value) })
-            }
+            onChange={(e) => setState({ ...state, age: e.target.value })}
           />
         </div>
 
@@ -57,9 +70,7 @@ export default function Form({ onResult }) {
           <input
             type="number"
             value={state.height_cm}
-            onChange={(e) =>
-              setState({ ...state, height_cm: parseFloat(e.target.value) })
-            }
+            onChange={(e) => setState({ ...state, height_cm: e.target.value })}
           />
         </div>
 
@@ -68,9 +79,7 @@ export default function Form({ onResult }) {
           <input
             type="number"
             value={state.weight_kg}
-            onChange={(e) =>
-              setState({ ...state, weight_kg: parseFloat(e.target.value) })
-            }
+            onChange={(e) => setState({ ...state, weight_kg: e.target.value })}
           />
         </div>
       </div>
@@ -80,9 +89,7 @@ export default function Form({ onResult }) {
         type="number"
         step="0.5"
         value={state.activity_level}
-        onChange={(e) =>
-          setState({ ...state, activity_level: parseFloat(e.target.value) })
-        }
+        onChange={(e) => setState({ ...state, activity_level: e.target.value })}
       />
 
       <div className="row">
@@ -147,3 +154,4 @@ export default function Form({ onResult }) {
     </form>
   );
 }
+
