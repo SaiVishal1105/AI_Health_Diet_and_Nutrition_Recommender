@@ -18,7 +18,7 @@ app = FastAPI(title="Diet Recommender API")
 # -------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # <-- You can later whitelist your Vercel domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,13 +36,11 @@ except Exception as e:
     print("DATA LOAD ERROR:", e)
     df_global = None
 
-# Recipe features
 if df_global is not None:
     recipe_features = df_global[[c for c in df_global.columns if c.startswith('std_')]].values.astype('float32')
 else:
     recipe_features = np.zeros((1, 5), dtype="float32")
 
-# model dims
 user_dim = 3 + 3 + 4 + 3
 recipe_dim = recipe_features.shape[1]
 
@@ -63,7 +61,7 @@ except Exception as e:
 
 
 # -------------------------------------------------
-# Request Schema
+# Request Schema  (FIXED)
 # -------------------------------------------------
 class UserInput(BaseModel):
     age: int
@@ -73,8 +71,8 @@ class UserInput(BaseModel):
     goal: str
     deficiency: str
     chronic: str
-    cuisine_pref: str
-    food_type: str
+    cuisine_pref: str | None = None
+    food_type: str | None = None
     calorie_target: float | None = None
 
 
@@ -82,17 +80,14 @@ class UserInput(BaseModel):
 # Score Recipes
 # -------------------------------------------------
 def score_recipes(user):
-    # BMI
     bmi = user['weight_kg'] / ((user['height_cm'] / 100) ** 2 + 1e-6)
 
-    # Basic user vector
     user_vec = [
         user['age'] / 100.0,
         bmi / 50.0,
         user['activity_level'] / 2.0
     ]
 
-    # One-hot encodings
     goals = ['loss', 'gain', 'muscle']
     defs_ = ['none', 'iron', 'vitd', 'protein']
     chs = ['none', 'diabetes', 'hypertension']
@@ -105,7 +100,6 @@ def score_recipes(user):
     uv = uv.repeat(len(recipe_features), 1)
     rx = torch.tensor(recipe_features, dtype=torch.float32)
 
-    # Model prediction
     with torch.no_grad():
         try:
             scores = model(uv, rx).numpy()
@@ -116,27 +110,34 @@ def score_recipes(user):
 
 
 # -------------------------------------------------
-# Weekly Plan Builder
+# Weekly Plan Builder (FIXED)
 # -------------------------------------------------
 def build_week_plan(user_input):
     user = dict(user_input)
+
+    # Fix empty strings → convert to "None"
+    if not user["cuisine_pref"]:
+        user["cuisine_pref"] = "None"
+    if not user["food_type"]:
+        user["food_type"] = "none"
+
     scores = score_recipes(user)
 
     df = df_global.copy()
     df["score"] = scores
 
-    # Filter for veg/non-veg/vegan
-    if user["food_type"] and user["food_type"].lower() != "none":
+    # Food type filter
+    if user["food_type"].lower() != "none":
         df = df[df["food_type"].str.lower() == user["food_type"].lower()]
 
-    # Cuisine preference multiplier
-    if user["cuisine_pref"]:
+    # Cuisine preference weight
+    if user["cuisine_pref"] != "None":
         df.loc[df["cuisine"] != user["cuisine_pref"], "score"] *= 0.8
 
     plan = {"days": []}
     used = set()
 
-    # ---------- Daily Meal Plan ----------
+    # Meals
     for day in range(7):
         day_meals = {}
 
@@ -171,7 +172,7 @@ def build_week_plan(user_input):
 
         plan["days"].append(day_meals)
 
-    # ---------- Workout Plan ----------
+    # Workouts
     workouts_loss = [
         "HIIT + Core (30–40 min)",
         "Brisk Walk/Cycling (45 min)",
@@ -189,7 +190,7 @@ def build_week_plan(user_input):
         "Core + Mobility (30 min)",
         "Upper Body Strength (50 min)",
         "Lower Body Strength (50 min)",
-        "Active Rest + Stretching (20 min)",
+        "Active Rest + Stretch (20 min)",
     ]
 
     workouts_gain = [
@@ -224,7 +225,5 @@ def generate_plan(inp: UserInput):
 # Main (for local testing)
 # -------------------------------------------------
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
