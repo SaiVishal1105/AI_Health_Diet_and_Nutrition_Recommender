@@ -17,18 +17,17 @@ export default function Form({ onResult }) {
   e.preventDefault();
 
   const payload = {
-  age: Number(state.age),
-  height_cm: Number(state.height_cm),
-  weight_kg: Number(state.weight_kg),
-  activity_level: Number(state.activity_level),
-  goal: state.goal,
-  deficiency: state.deficiency,
-  chronic: state.chronic,
-  cuisine_pref: state.cuisine_pref || null,
-  food_type: state.food_type || null,
-  calorie_target: null
-};
-
+    age: Number(state.age),
+    height_cm: Number(state.height_cm),
+    weight_kg: Number(state.weight_kg),
+    activity_level: Number(state.activity_level),
+    goal: state.goal,
+    deficiency: state.deficiency,
+    chronic: state.chronic,
+    cuisine_pref: state.cuisine_pref || null,
+    food_type: state.food_type || null,
+    calorie_target: null
+  };
 
   try {
     const resp = await fetch(
@@ -44,6 +43,7 @@ export default function Form({ onResult }) {
     );
 
     const data = await resp.json();
+
     if (!resp.ok) {
       console.log("Backend returned:", data);
       throw new Error("Backend rejected request");
@@ -55,6 +55,7 @@ export default function Form({ onResult }) {
     alert("⚠️ Failed to fetch plan.");
   }
 };
+
 
 
   return (
