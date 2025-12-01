@@ -9,7 +9,7 @@ export default function Form({ onResult }) {
     goal: "loss",
     deficiency: "none",
     chronic: "none",
-    cuisine_pref: "",
+    cuisine_pref: "none",
     food_type: "none"
   });
 
