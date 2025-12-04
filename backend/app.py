@@ -116,7 +116,7 @@ def score_recipes(user):
 
 
 # -------------------------------------------------
-# Weekly Plan Builder
+# Weekly Plan Builder (FIXED: Added data missing check)
 # -------------------------------------------------
 def build_week_plan(user_input):
     user = dict(user_input)
@@ -143,12 +143,20 @@ def build_week_plan(user_input):
     if user["chronic"] is None or user["chronic"] in ["", "None"]:
         user["chronic"] = "none"
 
-    scores = score_recipes(user)
-
+    # --- CRITICAL CHECK FOR DATA LOADING ---
     if df_global is None or df_global.empty:
-        # Handle case where df_global could not be loaded
-        print("Error: df_global is not available to build plan.")
-        return {"plan": {"days": []}, "workout": []}
+        print("CRITICAL ERROR: df_global (Recipe Data) is not available to build plan.")
+        return {
+            "plan": {"days": []},
+            "workout": [
+                "**FATAL ERROR: Recipe data not loaded.**",
+                "Please check the backend deployment logs for 'DATA LOAD ERROR' during startup.",
+                "The plan cannot be generated without the 'recipe_data.csv' file or if 'data_processing.py' failed."
+            ]
+        }
+    # -----------------------------------------
+    
+    scores = score_recipes(user)
 
 
     df = df_global.copy()
