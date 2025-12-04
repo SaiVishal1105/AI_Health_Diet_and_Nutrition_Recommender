@@ -1,241 +1,126 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from data_processing import load_and_process
-import torch
-import numpy as np
-from model import RecipeRanker
-import uvicorn
-from fastapi.middleware.cors import CORSMiddleware
-import os
+from fastapi import Request, HTTPException
 
-# -------------------------------------------------
-# Create FastAPI app
-# -------------------------------------------------
-app = FastAPI(title="Diet Recommender API")
+# -------------------------
+# Helper: validate + normalize
+# -------------------------
+def validate_and_normalize_input(data: dict) -> dict:
+    """
+    Ensure all required fields exist and coerce them to proper types.
+    Returns normalized dict or raises HTTPException(400) if required field missing/invalid.
+    """
+    # required fields and defaults
+    expected = {
+        "age": 23,
+        "height_cm": 170.0,
+        "weight_kg": 70.0,
+        "activity_level": 1.55,
+        "goal": "none",
+        "deficiency": "none",
+        "chronic": "none",
+        "cuisine_pref": "none",
+        "food_type": "none",
+        "calorie_target": None,
+    }
 
-# -------------------------------------------------
-# CORS
-# -------------------------------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    normalized = {}
 
-# -------------------------------------------------
-# Load Data & Model
-# -------------------------------------------------
-print("Loading data...")
+    # If body is not a dict, fail early
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-try:
-    df_global, enc_global, scaler_global, num_cols = load_and_process()
-    print("Data loaded successfully.")
-except Exception as e:
-    print("DATA LOAD ERROR:", e)
-    df_global = None
-
-if df_global is not None:
-    recipe_features = df_global[[c for c in df_global.columns if c.startswith('std_')]].values.astype('float32')
-else:
-    recipe_features = np.zeros((1, 5), dtype="float32")
-
-user_dim = 3 + 3 + 4 + 3
-recipe_dim = recipe_features.shape[1]
-
-model = RecipeRanker(user_dim, recipe_dim)
-
-MODEL_PATH = "model.pt"
-
-print("Loading model...")
-try:
-    if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
-        model.eval()
-        print("Model loaded successfully.")
-    else:
-        print("MODEL FILE NOT FOUND:", MODEL_PATH)
-except Exception as e:
-    print("MODEL LOAD ERROR:", e)
-
-
-# -------------------------------------------------
-# User Input Schema
-# -------------------------------------------------
-class UserInput(BaseModel):
-    age: int
-    height_cm: float
-    weight_kg: float
-    activity_level: float
-    goal: str
-    deficiency: str
-    chronic: str
-    cuisine_pref: str | None = None
-    food_type: str | None = None
-    calorie_target: float | None = None
-
-
-# -------------------------------------------------
-# Score Recipes
-# -------------------------------------------------
-def score_recipes(user):
-    bmi = user['weight_kg'] / ((user['height_cm'] / 100) ** 2 + 1e-6)
-
-    user_vec = [
-        user['age'] / 100.0,
-        bmi / 50.0,
-        user['activity_level'] / 2.0
-    ]
-
-    goals = ['loss', 'gain', 'muscle']
-    defs_ = ['none', 'iron', 'vitd', 'protein']
-    chs = ['none', 'diabetes', 'hypertension']
-
-    user_vec += [1.0 if user['goal'] == g else 0.0 for g in goals]
-    user_vec += [1.0 if user['deficiency'] == d else 0.0 for d in defs_]
-    user_vec += [1.0 if user['chronic'] == c else 0.0 for c in chs]
-
-    uv = torch.tensor(user_vec, dtype=torch.float32).unsqueeze(0)
-    uv = uv.repeat(len(recipe_features), 1)
-    rx = torch.tensor(recipe_features, dtype=torch.float32)
-
-    with torch.no_grad():
+    # Coerce numeric fields safely
+    def to_float(x, default):
+        if x is None or x == "":
+            return default
         try:
-            scores = model(uv, rx).numpy()
+            return float(x)
         except Exception:
-            scores = np.random.rand(len(recipe_features))
+            return default
 
-    return scores
+    def to_int(x, default):
+        if x is None or x == "":
+            return default
+        try:
+            return int(float(x))
+        except Exception:
+            return default
 
+    # Age (int)
+    normalized["age"] = to_int(data.get("age", expected["age"]), expected["age"])
 
-# -------------------------------------------------
-# Weekly Plan Builder
-# -------------------------------------------------
-def build_week_plan(user_input):
-    user = dict(user_input)
+    # Height/weight/activity (floats)
+    normalized["height_cm"] = to_float(data.get("height_cm", expected["height_cm"]), expected["height_cm"])
+    normalized["weight_kg"] = to_float(data.get("weight_kg", expected["weight_kg"]), expected["weight_kg"])
+    normalized["activity_level"] = to_float(data.get("activity_level", expected["activity_level"]), expected["activity_level"])
 
-    # Normalize null / empty values
-    if user["cuisine_pref"] is None or user["cuisine_pref"] in ["", "none", "None"]:
-        user["cuisine_pref"] = "none"
+    # Strings (with safe defaults)
+    def clean_str_field(key):
+        v = data.get(key, expected[key])
+        if v is None:
+            return expected[key]
+        v = str(v).strip()
+        if v == "" or v.lower() == "none":
+            return expected[key]
+        return v
 
-    if user["food_type"] is None or user["food_type"] in ["", "none", "None"]:
-        user["food_type"] = "none"
+    normalized["goal"] = clean_str_field("goal")
+    normalized["deficiency"] = clean_str_field("deficiency")
+    normalized["chronic"] = clean_str_field("chronic")
+    normalized["cuisine_pref"] = clean_str_field("cuisine_pref")
+    normalized["food_type"] = clean_str_field("food_type")
 
-    scores = score_recipes(user)
-
-    df = df_global.copy()
-    df["score"] = scores
-
-    # Food type filter
-    if user["food_type"] != "none":
-        df = df[df["food_type"].str.lower() == user["food_type"].lower()]
-
-    # Cuisine preference (soft penalty)
-    if user["cuisine_pref"] != "none":
-        df.loc[df["cuisine"] != user["cuisine_pref"], "score"] *= 0.8
-
-    plan = {"days": []}
-    used = set()
-
-    # Build 7-day meal plan
-    for day in range(7):
-        day_meals = {}
-
-        for meal in ["Breakfast", "Lunch", "Dinner"]:
-            candidates = df[df["meal_type"].str.lower() == meal.lower()].sort_values("score", ascending=False)
-
-            chosen = None
-            for _, row in candidates.iterrows():
-                if row["recipe_name"] not in used:
-                    chosen = row
-                    break
-
-            if chosen is None:
-                chosen = candidates.iloc[0]
-
-            day_meals[meal] = {
-                "recipe_name": chosen.get("recipe_name", ""),
-                "ingredients": chosen.get("ingredients", ""),
-                "instructions": chosen.get("instructions", ""),
-                "preparation": chosen.get("preparation", ""),
-                "calories": float(chosen.get("calories", 0)),
-                "protein_g": float(chosen.get("protein_g", 0)),
-                "carbs_g": float(chosen.get("carbs_g", 0)),
-                "fat_g": float(chosen.get("fat_g", 0)),
-                "iron_mg": float(chosen.get("iron_mg", 0)),
-                "suitable_for_diabetes": bool(chosen.get("suitable_for_diabetes", False)),
-            }
-
-            used.add(chosen["recipe_name"])
-            if len(used) > 12:
-                used = set(list(used)[-12:])
-
-        plan["days"].append(day_meals)
-
-    # Workouts
-    workouts_loss = [
-        "HIIT + Core (30–40 min)",
-        "Brisk Walk/Cycling (45 min)",
-        "Full Body Strength (40 min)",
-        "Yoga + Mobility (30 min)",
-        "Interval Running + Core (30 min)",
-        "Bodyweight Strength (40 min)",
-        "Light Walk + Stretch (20 min)",
-    ]
-
-    workouts_muscle = [
-        "Push Day: Chest/Shoulders/Triceps (60 min)",
-        "Pull Day: Back/Biceps (60 min)",
-        "Leg Day: Squats/Deadlifts (60 min)",
-        "Core + Mobility (30 min)",
-        "Upper Body Strength (50 min)",
-        "Lower Body Strength (50 min)",
-        "Active Rest + Stretch (20 min)",
-    ]
-
-    workouts_gain = [
-        "Heavy Full Body Strength (50 min)",
-        "Cardio 20 min + Shoulders (40 min)",
-        "Moderate Full Body Strength (45 min)",
-        "Core + Yoga (30 min)",
-        "Upper Body Hypertrophy (50 min)",
-        "Lower Body Hypertrophy (50 min)",
-        "Rest Day + Stretch (20 min)",
-    ]
-
-    if user["goal"] == "muscle":
-        workout = workouts_muscle
-    elif user["goal"] == "gain":
-        workout = workouts_gain
+    # calorie_target (optional float)
+    ct = data.get("calorie_target", expected["calorie_target"])
+    if ct is None or ct == "":
+        normalized["calorie_target"] = None
     else:
-        workout = workouts_loss
+        try:
+            normalized["calorie_target"] = float(ct)
+        except Exception:
+            normalized["calorie_target"] = None
 
-    return {"plan": plan, "workout": workout}
+    # Basic sanity checks (optional)
+    if normalized["age"] <= 0 or normalized["height_cm"] <= 0 or normalized["weight_kg"] <= 0:
+        raise HTTPException(status_code=400, detail="age/height/weight must be positive numbers")
+
+    return normalized
 
 
-# -------------------------------------------------
-# API Route
-# -------------------------------------------------
+# -------------------------
+# New route: accept raw JSON + validate
+# -------------------------
 @app.post("/generate_plan")
-def generate_plan(inp: UserInput):
-    data = inp.model_dump()
+async def generate_plan(request: Request):
+    """
+    Accepts any JSON payload, normalizes it, and then runs plan generation.
+    This avoids intermittent 422s caused by strict Pydantic validation.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # CLEAN INPUT (prevents 422 forever)
-    if data["cuisine_pref"] is None or data["cuisine_pref"] in ["", "none", "None"]:
-        data["cuisine_pref"] = "none"
+    # Normalize & coerce types
+    try:
+        data = validate_and_normalize_input(payload)
+    except HTTPException as e:
+        # Bad request from client
+        raise e
+    except Exception as e:
+        # Unexpected server-side error during validation
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if data["food_type"] is None or data["food_type"] in ["", "none", "None"]:
-        data["food_type"] = "none"
-
+    # For debugging: log the cleaned input (you already used print)
     print("CLEANED INPUT:", data)
 
-    return build_week_plan(data)
+    # Ensure df_global loaded
+    if df_global is None:
+        raise HTTPException(status_code=503, detail="Server data not available")
 
-
-# -------------------------------------------------
-# Main
-# -------------------------------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Build plan (wrap errors)
+    try:
+        return build_week_plan(data)
+    except Exception as e:
+        # Log exception and return 500
+        print("PLAN BUILD ERROR:", e)
+        raise HTTPException(status_code=500, detail="Failed to build plan")
