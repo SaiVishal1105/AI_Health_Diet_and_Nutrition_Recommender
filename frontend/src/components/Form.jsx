@@ -163,7 +163,9 @@ export default function Form({ onResult }) {
         <option value="non-vegetarian">Non-Vegetarian</option>
       </select>
 
-      <button type="submit">Generate 7-day Plan</button>
+      <button type="submit" onClick={(e) => e.stopPropagation()}>
+  Generate 7-day Plan
+</button>
     </form>
   );
 }
