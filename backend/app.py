@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 from data_processing import load_and_process
 import torch
@@ -14,7 +14,7 @@ import os
 app = FastAPI(title="Diet Recommender API")
 
 # -------------------------------------------------
-# CORS for Vercel Frontend
+# CORS
 # -------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -61,7 +61,7 @@ except Exception as e:
 
 
 # -------------------------------------------------
-# Request Schema  (FIXED)
+# User Input Schema
 # -------------------------------------------------
 class UserInput(BaseModel):
     age: int
@@ -110,15 +110,16 @@ def score_recipes(user):
 
 
 # -------------------------------------------------
-# Weekly Plan Builder (FIXED)
+# Weekly Plan Builder
 # -------------------------------------------------
 def build_week_plan(user_input):
     user = dict(user_input)
 
-    # Fix empty strings → convert to "None"
-    if not user["cuisine_pref"]:
-        user["cuisine_pref"] = "None"
-    if not user["food_type"]:
+    # Normalize null / empty values
+    if user["cuisine_pref"] is None or user["cuisine_pref"] in ["", "none", "None"]:
+        user["cuisine_pref"] = "none"
+
+    if user["food_type"] is None or user["food_type"] in ["", "none", "None"]:
         user["food_type"] = "none"
 
     scores = score_recipes(user)
@@ -127,17 +128,17 @@ def build_week_plan(user_input):
     df["score"] = scores
 
     # Food type filter
-    if user["food_type"].lower() != "none":
+    if user["food_type"] != "none":
         df = df[df["food_type"].str.lower() == user["food_type"].lower()]
 
-    # Cuisine preference weight
-    if user["cuisine_pref"] != "None":
+    # Cuisine preference (soft penalty)
+    if user["cuisine_pref"] != "none":
         df.loc[df["cuisine"] != user["cuisine_pref"], "score"] *= 0.8
 
     plan = {"days": []}
     used = set()
 
-    # Meals
+    # Build 7-day meal plan
     for day in range(7):
         day_meals = {}
 
@@ -218,14 +219,22 @@ def build_week_plan(user_input):
 # -------------------------------------------------
 @app.post("/generate_plan")
 def generate_plan(inp: UserInput):
-    print("RAW INPUT:", inp)
-    print("AS DICT:", inp.model_dump())
-    return build_week_plan(inp.model_dump())
+    data = inp.model_dump()
 
+    # CLEAN INPUT (prevents 422 forever)
+    if data["cuisine_pref"] is None or data["cuisine_pref"] in ["", "none", "None"]:
+        data["cuisine_pref"] = "none"
+
+    if data["food_type"] is None or data["food_type"] in ["", "none", "None"]:
+        data["food_type"] = "none"
+
+    print("CLEANED INPUT:", data)
+
+    return build_week_plan(data)
 
 
 # -------------------------------------------------
-# Main (for local testing)
+# Main
 # -------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
