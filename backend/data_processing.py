@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import os
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "healthy_recipes_augmented.xlsx")
+DATA_PATH = "healthy_recipes_augmented.xlsx"
 
 def load_and_process():
     df = pd.read_excel(DATA_PATH)
