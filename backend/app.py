@@ -1,4 +1,3 @@
-
 # app.py (robust, Render-friendly, model+heuristic fallback)
 import os
 import logging
@@ -374,37 +373,25 @@ def build_week_plan(user_input: Dict[str, Any]) -> Dict[str, Any]:
         plan["days"].append(day_meals)
 
     # workouts as before (simple mapping)
-   workouts = {
+    workouts = {
         "loss": [
-            "HIIT + Core (30–40 min)",
-            "Brisk Walk/Cycling (45 min)",
-            "Full Body Strength (40 min)",
-            "Yoga + Mobility (30 min)",
-            "Interval Running + Core (30 min)",
-            "Bodyweight Strength (40 min)",
-            "Light Walk + Stretch (20 min)",
+            "HIIT + Core (30–40 min)", "Brisk Walk/Cycling (45 min)", "Full Body Strength (40 min)",
+            "Yoga + Mobility (30 min)", "Interval Running + Core (30 min)", "Bodyweight Strength (40 min)",
+            "Light Walk + Stretch (20 min)"
         ],
         "muscle": [
-            "Push Day: Chest/Shoulders/Triceps (60 min)",
-            "Pull Day: Back/Biceps (60 min)",
-            "Leg Day: Squats/Deadlifts (60 min)",
-            "Core + Mobility (30 min)",
-            "Upper Body Strength (50 min)",
-            "Lower Body Strength (50 min)",
-            "Active Rest + Stretch (20 min)",
+            "Push Day (60 min)", "Pull Day (60 min)", "Leg Day (60 min)",
+            "Core + Mobility (30 min)", "Upper Body Strength (50 min)", "Lower Body Strength (50 min)",
+            "Active Rest (20 min)"
         ],
         "gain": [
-            "Heavy Full Body Strength (50 min)",
-            "Moderate Full Body Strength (45 min)",
-            "Core + Yoga (30 min)",
-            "Upper Body Hypertrophy (50 min)",
-            "Lower Body Hypertrophy (50 min)",
-            "Light Cardio (20 min)",
-            "Rest Day + Stretch (20 min)",
+            "Heavy Strength (50 min)", "Moderate Strength (45 min)", "Core + Yoga (30 min)",
+            "Upper Hypertrophy (50 min)", "Lower Hypertrophy (50 min)", "Light Cardio (20 min)",
+            "Rest Day (20 min)"
         ],
     }
 
-    return {"plan": plan, "workout": workouts.get(user["goal"], workouts["loss"])}
+    return {"plan": plan, "workout": workouts.get(user.get("goal", "loss"), workouts["loss"])}
 
 
 # -------------------------
